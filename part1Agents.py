@@ -13,6 +13,7 @@ from model import (
 from agents import WizardSearchAgent
 import heapq
 from dataclasses import dataclass
+from collections import deque
 
 
 class WizardDFS(WizardSearchAgent):
@@ -127,20 +128,31 @@ class WizardBFS(WizardSearchAgent):
         initial_search_state = self.game_to_search(game_state)
         self.paths = {}
         self.paths[initial_search_state] = []
-        self.search_stack = [initial_search_state]
+        self.search_queue = deque([initial_search_state])
 
     def is_goal(self, state: SearchState) -> bool:
         return state.wizard_loc == state.portal_loc
 
     def next_search_expansion(self) -> GameState | None:
         # TODO: YOUR CODE HERE
-        raise NotImplementedError
+        while self.search_queue:
+            state = self.search_queue.popleft() # difference from DFS
+            if self.is_goal(state):
+                self.plan = list(reversed(self.paths[state]))
+                return None
+            return self.search_to_game(state)
+        return None
 
     def process_search_expansion(
         self, source: GameState, target: GameState, action: WizardMoves
     ) -> None:
         # TODO: YOUR CODE HERE
-        raise NotImplementedError
+        source_search = self.game_to_search(source)
+        target_search = self.game_to_search(target)
+
+        if target_search not in self.paths:
+            self.paths[target_search] = self.paths[source_search] + [action]
+            self.search_queue.append(target_search)
 
 class WizardUCS(WizardBFS):
     pass
