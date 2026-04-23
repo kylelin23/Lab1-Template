@@ -70,7 +70,7 @@ class WizardDFS(WizardSearchAgent):
                 continue
             self.visited.add(state)
             if self.is_goal(state):
-                self.plan = list(reversed(self.paths[state]))  # reverse here
+                self.plan = list(reversed(self.paths[state]))
                 return None
             return self.search_to_game(state)
         return None
@@ -82,7 +82,7 @@ class WizardDFS(WizardSearchAgent):
         source_search = self.game_to_search(source)
         target_search = self.game_to_search(target)
 
-        # Only visit states we haven't seen before (avoid re-expansion)
+        # Only visit states we haven't seen before
         if target_search not in self.paths:
             self.paths[target_search] = self.paths[source_search] + [action]
             self.search_stack.append(target_search)
@@ -208,17 +208,41 @@ class WizardAstar(WizardSearchAgent):
 
     def heuristic(self, target: GameState) -> float:
         # TODO: YOUR CODE HERE
-        raise NotImplementedError
+        search_state = self.game_to_search(target)
+        wizard = search_state.wizard_loc
+        portal = search_state.portal_loc
+        return abs(wizard.row - portal.row) + abs(wizard.col - portal.col)
 
     def next_search_expansion(self) -> GameState | None:
         # TODO: YOUR CODE HERE
-        raise NotImplementedError
+        while self.search_pq:
+            f_score, state = heapq.heappop(self.search_pq)
+            # skip if we already found a better path to this state
+            if state not in self.paths:
+                continue
+            best_cost, _ = self.paths[state]
+            if f_score > best_cost + self.heuristic(self.search_to_game(state)):
+                continue
+            if self.is_goal(state):
+                self.plan = list(reversed(self.paths[state][1]))
+                return None
+            return self.search_to_game(state)
+        return None
 
     def process_search_expansion(
         self, source: GameState, target: GameState, action: WizardMoves
     ) -> None:
         # TODO: YOUR CODE HERE
-        raise NotImplementedError
+        source_search = self.game_to_search(source)
+        target_search = self.game_to_search(target)
+
+        source_cost, _ = self.paths[source_search]
+        new_cost = source_cost + self.cost(source, target, action)
+
+        if target_search not in self.paths or new_cost < self.paths[target_search][0]:
+            self.paths[target_search] = (new_cost, self.paths[source_search][1] + [action])
+            f_score = new_cost + self.heuristic(target)
+            heapq.heappush(self.search_pq, (f_score, target_search))
 
 
 class CrystalSearchWizard(WizardSearchAgent):
