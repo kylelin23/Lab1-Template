@@ -247,19 +247,97 @@ class WizardAstar(WizardSearchAgent):
 
 class CrystalSearchWizard(WizardSearchAgent):
     # TODO: YOUR CODE HERE
+    @dataclass(eq=True, frozen=True, order=True)
+    class SearchState:
+        wizard_loc: Location
+        portal_loc: Location
+        crystals_remaining: frozenset
+
+    initial_game_state: GameState
+
+    def search_to_game(self, search_state: SearchState) -> GameState:
+        initial_wizard_loc = self.initial_game_state.active_entity_location
+        initial_wizard = self.initial_game_state.get_active_entity()
+
+        game_state = self.initial_game_state
+        all_crystal_locs = game_state.get_all_entity_locations(Crystal)
+        for loc in all_crystal_locs:
+            if loc not in search_state.crystals_remaining:
+                game_state = game_state.replace_entity(loc.row, loc.col, EmptyEntity())
+
+        game_state = (
+            game_state
+            .replace_entity(initial_wizard_loc.row, initial_wizard_loc.col, EmptyEntity())
+            .replace_entity(search_state.wizard_loc.row, search_state.wizard_loc.col, initial_wizard)
+            .replace_active_entity_location(search_state.wizard_loc)
+        )
+        return game_state
+
+    def game_to_search(self, game_state: GameState) -> SearchState:
+        wizard_loc = game_state.active_entity_location
+        portal_loc = game_state.get_all_tile_locations(Portal)[0]
+        crystals_remaining = frozenset(game_state.get_all_entity_locations(Crystal))
+        return self.SearchState(wizard_loc, portal_loc, crystals_remaining)
 
     def __init__(self, initial_state: GameState):
         self.start_search(initial_state)
 
+    def start_search(self, game_state: GameState):
+        self.initial_game_state = game_state
+        initial_search_state = self.game_to_search(game_state)
+        self.paths = {}
+        self.paths[initial_search_state] = (0, [])
+        self.search_pq = [(0, initial_search_state)]
+
+    def heuristic(self, target: GameState) -> float:
+        # Nearest crystal + distance from that crystal to portal
+        state = self.game_to_search(target)
+        wizard = state.wizard_loc
+        crystals = list(state.crystals_remaining)
+        portal = state.portal_loc
+
+        if not crystals:
+            return abs(wizard.row - portal.row) + abs(wizard.col - portal.col)
+
+        nearest_crystal = min(
+            crystals,
+            key=lambda c: abs(wizard.row - c.row) + abs(wizard.col - c.col)
+        )
+        dist_to_crystal = abs(wizard.row - nearest_crystal.row) + abs(wizard.col - nearest_crystal.col)
+        dist_crystal_to_portal = abs(nearest_crystal.row - portal.row) + abs(nearest_crystal.col - portal.col)
+
+        return dist_to_crystal + dist_crystal_to_portal
+
     def next_search_expansion(self) -> GameState | None:
         # TODO YOUR CODE HEREs
-        raise NotImplementedError
+        while self.search_pq:
+            f_score, state = heapq.heappop(self.search_pq)
+            if state not in self.paths:
+                continue
+            best_cost, _ = self.paths[state]
+            if f_score > best_cost + self.heuristic(self.search_to_game(state)):
+                continue
+            # goal check inlined: all crystals collected and at portal
+            if len(state.crystals_remaining) == 0 and state.wizard_loc == state.portal_loc:
+                self.plan = list(reversed(self.paths[state][1]))
+                return None
+            return self.search_to_game(state)
+        return None
 
     def process_search_expansion(
         self, source: GameState, target: GameState, action: WizardMoves
     ) -> None:
         # TODO YOUR CODE HERE
-        raise NotImplementedError
+        source_search = self.game_to_search(source)
+        target_search = self.game_to_search(target)
+
+        source_cost, _ = self.paths[source_search]
+        new_cost = source_cost + 1
+
+        if target_search not in self.paths or new_cost < self.paths[target_search][0]:
+            self.paths[target_search] = (new_cost, self.paths[source_search][1] + [action])
+            f_score = new_cost + self.heuristic(target)
+            heapq.heappush(self.search_pq, (f_score, target_search))
 
 
 
@@ -267,4 +345,21 @@ class SuboptimalCrystalSearchWizard(CrystalSearchWizard):
 
     def heuristic(self, target: SearchState) -> float:
         # TODO YOUR CODE HERE
-        raise NotImplementedError
+        state = self.game_to_search(target)
+        wizard = state.wizard_loc
+        crystals = list(state.crystals_remaining)
+        portal = state.portal_loc
+
+        if not crystals:
+            return abs(wizard.row - portal.row) + abs(wizard.col - portal.col)
+
+        nearest_crystal = min(
+            crystals,
+            key=lambda c: abs(wizard.row - c.row) + abs(wizard.col - c.col)
+        )
+        dist_to_crystal = abs(wizard.row - nearest_crystal.row) + abs(wizard.col - nearest_crystal.col)
+        dist_crystal_to_portal = abs(nearest_crystal.row - portal.row) + abs(nearest_crystal.col - portal.col)
+
+        # Make inadmissible
+        weight = 3.0
+        return weight * (dist_to_crystal + dist_crystal_to_portal)
